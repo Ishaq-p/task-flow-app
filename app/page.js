@@ -95,9 +95,13 @@ export default function DashboardPage() {
             <EmptyState onAdd={() => setShowNewProject(true)} />
           ) : (
             <div className="stagger" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 12 }}>
-              {recentProjects.map((p) => (
+              {/* {recentProjects.map((p) => (
                 <ProjectCard key={p.id} project={p} />
-              ))}
+              ))} */}
+{recentProjects.map((p) => {
+  //  console.log("Project Data:", p); // Check the console in your browser!
+   return <ProjectCard key={p.id} project={p} />;
+ })}
             </div>
           )}
         </section>

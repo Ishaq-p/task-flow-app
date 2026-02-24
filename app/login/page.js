@@ -8,7 +8,7 @@ export default function LoginPage() {
 
   const handleLogin = async (e) => {
     e.preventDefault();
-    console.log('clicked')
+    // console.log('clicked')
     // We send the password to a small API we'll make next
     const res = await fetch("/api/auth", {
       method: "POST",

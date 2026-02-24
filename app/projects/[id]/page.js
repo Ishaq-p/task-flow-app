@@ -20,6 +20,8 @@ import ProjectModal    from "../../../components/ProjectModal";
 import BulkActionBar   from "../../../components/BulkActionBar";
 import ShortcutsModal  from "../../../components/ShortcutsModal";
 import { useProjects } from "../../../lib/hooks/useProjects";
+import { ICON_MAP } from "../../../lib/icons";
+
 
 const FILTERS = ["all", "todo", "done"];
 const SORTS   = [
@@ -210,6 +212,8 @@ export default function ProjectPage() {
     );
   }
 
+  const IconComponent = ICON_MAP[project.icon] || ICON_MAP.folder;
+
   return (
     <AppShell>
       <div style={{ padding: "36px 40px 100px", maxWidth: 820 }}>
@@ -221,7 +225,9 @@ export default function ProjectPage() {
           borderRadius: 14, padding: "22px 26px", marginBottom: 26,
         }}>
           <div style={{ display: "flex", alignItems: "flex-start", gap: 14 }}>
-            <span style={{ fontSize: 34 }}>{project.icon}</span>
+            <div style={{ color: project.color }}>
+              <IconComponent size={24} strokeWidth={2} />
+            </div>
             <div style={{ flex: 1 }}>
               <h1 style={{ fontFamily: "var(--font-display)", fontSize: 26, fontWeight: 600, letterSpacing: "-.02em", lineHeight: 1.1 }}>
                 {project.name}

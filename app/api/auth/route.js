@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 
 export async function POST(req) {
   const { password } = await req.json();
-  console.log('clicked11')
+  // console.log('clicked11')
 
   if (password === process.env.APP_PASSWORD) {
     const cookieStore = await cookies();

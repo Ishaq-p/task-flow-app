@@ -1,13 +1,15 @@
 // components/ExportImportModal.js
 "use client";
 import { useState, useRef, useEffect } from "react";
-import { exportData, importData } from "../lib/storage";
+import { api } from "../lib/api";
 
 export default function ExportImportModal({ onClose, onImportDone }) {
-  const [tab,       setTab]       = useState("export");
+  const [tab,        setTab]        = useState("export");
   const [importMode, setImportMode] = useState("merge");
   const [jsonInput,  setJsonInput]  = useState("");
-  const [status,     setStatus]     = useState(null); // { ok: bool, msg: string }
+  const [exportJson, setExportJson] = useState("");
+  const [loading,    setLoading]    = useState(false);
+  const [status,     setStatus]     = useState(null);
   const fileRef = useRef(null);
 
   useEffect(() => {
@@ -16,25 +18,33 @@ export default function ExportImportModal({ onClose, onImportDone }) {
     return () => window.removeEventListener("keydown", fn);
   }, [onClose]);
 
-  // ── Export ───────────────────────────────────────────────────────────────
+  // Fetch export data when tab opens
+  useEffect(() => {
+    if (tab !== "export") return;
+    setLoading(true);
+    api.data.export().then(({ data, error }) => {
+      setLoading(false);
+      if (data) setExportJson(JSON.stringify(data, null, 2));
+      if (error) setStatus({ ok: false, msg: `Export error: ${error}` });
+    });
+  }, [tab]);
+
   function handleDownload() {
-    const json = exportData();
-    const blob = new Blob([json], { type: "application/json" });
+    const blob = new Blob([exportJson], { type: "application/json" });
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement("a");
     a.href     = url;
-    a.download = `taskflow-backup-${new Date().toISOString().slice(0,10)}.json`;
+    a.download = `taskflow-backup-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     URL.revokeObjectURL(url);
   }
 
-  function handleCopyJSON() {
-    navigator.clipboard.writeText(exportData());
+  function handleCopy() {
+    navigator.clipboard.writeText(exportJson);
     setStatus({ ok: true, msg: "Copied to clipboard!" });
     setTimeout(() => setStatus(null), 2000);
   }
 
-  // ── Import ───────────────────────────────────────────────────────────────
   function handleFileChange(e) {
     const file = e.target.files[0];
     if (!file) return;
@@ -43,15 +53,30 @@ export default function ExportImportModal({ onClose, onImportDone }) {
     reader.readAsText(file);
   }
 
-  function handleImport() {
-    if (!jsonInput.trim()) { setStatus({ ok: false, msg: "Nothing to import — paste JSON or pick a file." }); return; }
-    const result = importData(jsonInput, importMode);
-    if (result.success) {
-      setStatus({ ok: true, msg: `Imported successfully! ${importMode === "replace" ? "Data replaced." : "Projects merged."}` });
-      onImportDone?.();
-      setTimeout(() => { setStatus(null); onClose(); }, 1800);
-    } else {
-      setStatus({ ok: false, msg: `Error: ${result.error}` });
+  async function handleImport() {
+    if (!jsonInput.trim()) {
+      setStatus({ ok: false, msg: "Nothing to import — paste JSON or upload a file." });
+      return;
+    }
+    try {
+      const parsed = JSON.parse(jsonInput);
+      const incoming = Array.isArray(parsed) ? parsed : parsed.projects;
+      if (!Array.isArray(incoming)) throw new Error("Expected an array of projects.");
+
+      setLoading(true);
+      const { error } = await api.data.import(incoming, importMode);
+      setLoading(false);
+
+      if (error) {
+        setStatus({ ok: false, msg: `Error: ${error}` });
+      } else {
+        setStatus({ ok: true, msg: `Imported! ${importMode === "replace" ? "Data replaced." : "Projects merged."}` });
+        onImportDone?.();
+        setTimeout(() => { setStatus(null); onClose(); }, 1800);
+      }
+    } catch (e) {
+      setLoading(false);
+      setStatus({ ok: false, msg: `Parse error: ${e.message}` });
     }
   }
 
@@ -59,53 +84,53 @@ export default function ExportImportModal({ onClose, onImportDone }) {
     <div className="modal-backdrop" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="modal-box modal-box-lg animate-scale-in">
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
-          <h2 style={{ fontFamily: "var(--font-display)", fontSize: 20, fontWeight: 600 }}>
-            Export / Import
-          </h2>
+          <h2 style={{ fontFamily: "var(--font-display)", fontSize: 20, fontWeight: 600 }}>Export / Import</h2>
           <button className="btn-icon" onClick={onClose} style={{ fontSize: 16 }}>✕</button>
         </div>
 
-        {/* Tabs */}
         <div className="tab-bar">
           <button className={`tab-item ${tab === "export" ? "active" : ""}`} onClick={() => setTab("export")}>Export</button>
           <button className={`tab-item ${tab === "import" ? "active" : ""}`} onClick={() => setTab("import")}>Import</button>
         </div>
 
-        {/* ── Export Tab ── */}
+        {/* Export tab */}
         {tab === "export" && (
           <div>
-            <p style={{ fontSize: 13, color: "var(--muted)", marginBottom: 16, lineHeight: 1.6 }}>
-              Download your entire TaskFlow data as a JSON file. Use it as a backup or to restore on another device.
+            <p style={{ fontSize: 13, color: "var(--muted)", marginBottom: 14, lineHeight: 1.6 }}>
+              Download your TaskFlow data as JSON for backup or cross-device restore.
             </p>
-            <pre style={{
-              background: "var(--surface2)", border: "1px solid var(--border)",
-              borderRadius: 8, padding: 14, fontSize: 11, overflow: "auto",
-              maxHeight: 200, color: "var(--muted)", fontFamily: "var(--font-mono)",
-            }}>
-              {exportData().slice(0, 600)}{exportData().length > 600 ? "\n  … (truncated)" : ""}
-            </pre>
-            <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
-              <button className="btn btn-primary" onClick={handleDownload}>⬇ Download JSON</button>
-              <button className="btn btn-ghost"   onClick={handleCopyJSON}>Copy to clipboard</button>
-            </div>
+            {loading ? (
+              <div style={{ padding: "24px", textAlign: "center", color: "var(--muted)", fontSize: 13 }}>Loading…</div>
+            ) : (
+              <>
+                <pre style={{
+                  background: "var(--surface2)", border: "1px solid var(--border)",
+                  borderRadius: 8, padding: 14, fontSize: 11, overflow: "auto",
+                  maxHeight: 200, color: "var(--muted)", fontFamily: "var(--font-mono)",
+                }}>
+                  {exportJson.slice(0, 600)}{exportJson.length > 600 ? "\n  …" : ""}
+                </pre>
+                <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+                  <button className="btn btn-primary" onClick={handleDownload}>⬇ Download JSON</button>
+                  <button className="btn btn-ghost"   onClick={handleCopy}>Copy to clipboard</button>
+                </div>
+              </>
+            )}
           </div>
         )}
 
-        {/* ── Import Tab ── */}
+        {/* Import tab */}
         {tab === "import" && (
           <div>
-            <p style={{ fontSize: 13, color: "var(--muted)", marginBottom: 16, lineHeight: 1.6 }}>
-              Paste exported JSON below or upload a <code>.json</code> file.
+            <p style={{ fontSize: 13, color: "var(--muted)", marginBottom: 14, lineHeight: 1.6 }}>
+              Paste exported JSON or upload a <code>.json</code> backup file.
             </p>
-
-            {/* File upload */}
             <div
               onClick={() => fileRef.current?.click()}
               style={{
                 border: "2px dashed var(--border)", borderRadius: 8,
-                padding: "14px", textAlign: "center", cursor: "pointer",
-                marginBottom: 12, fontSize: 13, color: "var(--muted)",
-                transition: "border-color 0.15s",
+                padding: 14, textAlign: "center", cursor: "pointer",
+                marginBottom: 12, fontSize: 13, color: "var(--muted)", transition: "border-color 0.15s",
               }}
               onMouseEnter={e => e.currentTarget.style.borderColor = "var(--accent)"}
               onMouseLeave={e => e.currentTarget.style.borderColor = "var(--border)"}
@@ -113,27 +138,20 @@ export default function ExportImportModal({ onClose, onImportDone }) {
               📂 Click to upload .json file
               <input ref={fileRef} type="file" accept=".json" style={{ display: "none" }} onChange={handleFileChange} />
             </div>
-
-            <div className="field" style={{ marginBottom: 12 }}>
+            <div className="field" style={{ marginBottom: 14 }}>
               <label>Or paste JSON</label>
-              <textarea
-                value={jsonInput}
-                onChange={e => setJsonInput(e.target.value)}
+              <textarea value={jsonInput} onChange={e => setJsonInput(e.target.value)} rows={5}
                 placeholder='[{"id":"...","name":"...","tasks":[...]}]'
-                rows={6}
-                style={{ fontFamily: "var(--font-mono)", fontSize: 12 }}
-              />
+                style={{ fontFamily: "var(--font-mono)", fontSize: 12 }} />
             </div>
-
-            {/* Mode */}
             <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
               {["merge", "replace"].map(m => (
                 <label key={m} style={{
                   display: "flex", alignItems: "center", gap: 6, cursor: "pointer",
-                  padding: "8px 12px", borderRadius: 8, fontSize: 13,
+                  padding: "8px 12px", borderRadius: 8, fontSize: 13, flex: 1,
                   background: importMode === m ? "rgba(232,160,32,.1)" : "var(--surface2)",
                   border: `1px solid ${importMode === m ? "rgba(232,160,32,.4)" : "var(--border)"}`,
-                  flex: 1, transition: "all 0.15s",
+                  transition: "all 0.15s",
                 }}>
                   <input type="radio" name="importMode" value={m} checked={importMode === m}
                     onChange={() => setImportMode(m)} style={{ accentColor: "var(--accent)" }} />
@@ -146,14 +164,16 @@ export default function ExportImportModal({ onClose, onImportDone }) {
                 </label>
               ))}
             </div>
-
-            <button className="btn btn-primary" onClick={handleImport} style={{ width: "100%" }}>
-              ⬆ Import data
+            <button
+              className="btn btn-primary" onClick={handleImport}
+              disabled={loading}
+              style={{ width: "100%", opacity: loading ? 0.6 : 1 }}
+            >
+              {loading ? "Importing…" : "⬆ Import data"}
             </button>
           </div>
         )}
 
-        {/* Status message */}
         {status && (
           <div style={{
             marginTop: 12, padding: "10px 14px", borderRadius: 8, fontSize: 13,
